@@ -22,6 +22,12 @@ Grappler solves this by dynamically allocating unique ports for each worktree gr
 
 ## Installation
 
+### Install from the remote module
+
+```bash
+go install github.com/krish/grappler/cmd/grappler@latest
+```
+
 ### Build from source
 
 ```bash
