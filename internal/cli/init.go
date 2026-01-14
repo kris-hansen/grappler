@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 
-	"github.com/krish/grappler/internal/config"
-	"github.com/krish/grappler/internal/worktree"
+	"github.com/kris-hansen/grappler/internal/config"
+	"github.com/kris-hansen/grappler/internal/worktree"
 	"github.com/spf13/cobra"
 )
 

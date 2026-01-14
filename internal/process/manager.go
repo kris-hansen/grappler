@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/krish/grappler/internal/config"
+	"github.com/kris-hansen/grappler/internal/config"
 )
 
 // Manager handles process lifecycle

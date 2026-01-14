@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/krish/grappler/internal/config"
-	"github.com/krish/grappler/internal/process"
-	"github.com/krish/grappler/internal/worktree"
+	"github.com/kris-hansen/grappler/internal/config"
+	"github.com/kris-hansen/grappler/internal/process"
+	"github.com/kris-hansen/grappler/internal/worktree"
 	"github.com/spf13/cobra"
 )
 

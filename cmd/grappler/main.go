@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/krish/grappler/internal/cli"
+	"github.com/kris-hansen/grappler/internal/cli"
 	"github.com/spf13/cobra"
 )
 

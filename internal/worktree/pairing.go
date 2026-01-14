@@ -1,7 +1,7 @@
 package worktree
 
 import (
-	"github.com/krish/grappler/internal/config"
+	"github.com/kris-hansen/grappler/internal/config"
 )
 
 // PairWorktrees pairs backend and frontend worktrees to create groups
