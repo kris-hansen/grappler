@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -27,6 +28,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	cfg, err := config.Load(config.GetConfigPath())
 	if err != nil {
 		return fmt.Errorf("failed to load config (run 'grappler init' first): %w", err)
+	}
+	if pruneMissingDirectories(cfg) {
+		if err := cfg.Save(config.GetConfigPath()); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
 	}
 
 	// Load state
@@ -175,6 +181,41 @@ func scanRepoWorktrees(cfg *config.Config) (map[string][]worktree.Worktree, erro
 	}
 
 	return repoWorktrees, nil
+}
+
+func pruneMissingDirectories(cfg *config.Config) bool {
+	updated := false
+
+	for name, group := range cfg.Groups {
+		if group.Backend != nil {
+			if _, err := os.Stat(group.Backend.Directory); err != nil {
+				if os.IsNotExist(err) {
+					group.Backend = nil
+					updated = true
+				} else {
+					fmt.Printf("Warning: failed to stat backend directory for %s: %v\n", name, err)
+				}
+			}
+		}
+
+		if group.Frontend != nil {
+			if _, err := os.Stat(group.Frontend.Directory); err != nil {
+				if os.IsNotExist(err) {
+					group.Frontend = nil
+					updated = true
+				} else {
+					fmt.Printf("Warning: failed to stat frontend directory for %s: %v\n", name, err)
+				}
+			}
+		}
+
+		if group.Backend == nil && group.Frontend == nil {
+			delete(cfg.Groups, name)
+			updated = true
+		}
+	}
+
+	return updated
 }
 
 func printWorktreePortMap(repoWorktrees map[string][]worktree.Worktree, runningPorts map[string][]servicePort) {
