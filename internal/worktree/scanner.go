@@ -29,6 +29,21 @@ func ScanWorktrees(repoPath string) ([]Worktree, error) {
 	return parseWorktreeList(out.String()), nil
 }
 
+// GetCommonDir returns the common git directory for a worktree
+func GetCommonDir(repoPath string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	cmd.Dir = repoPath
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to resolve git common dir: %w", err)
+	}
+
+	return strings.TrimSpace(out.String()), nil
+}
+
 // parseWorktreeList parses the output of `git worktree list --porcelain`
 func parseWorktreeList(output string) []Worktree {
 	var worktrees []Worktree
