@@ -1,4 +1,4 @@
-module github.com/krish/grappler
+module github.com/kris-hansen/grappler
 
 go 1.25.5
 

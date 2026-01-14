@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/krish/grappler/internal/config"
-	"github.com/krish/grappler/internal/ports"
-	"github.com/krish/grappler/internal/process"
+	"github.com/kris-hansen/grappler/internal/config"
+	"github.com/kris-hansen/grappler/internal/ports"
+	"github.com/kris-hansen/grappler/internal/process"
 	"github.com/spf13/cobra"
 )
 

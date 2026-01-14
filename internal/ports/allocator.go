@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/krish/grappler/internal/config"
+	"github.com/kris-hansen/grappler/internal/config"
 )
 
 const (
