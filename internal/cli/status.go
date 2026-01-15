@@ -3,8 +3,10 @@ package cli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/kris-hansen/grappler/internal/config"
@@ -135,15 +137,23 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	externalPorts, err := scanListeningPorts(repoWorktrees)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to scan listening ports: %v\n", err)
+	} else {
+		mergePorts(runningPorts, externalPorts)
+	}
+
 	printWorktreePortMap(repoWorktrees, runningPorts)
 
 	return nil
 }
 
 type servicePort struct {
-	Group string
-	Role  string
-	Port  int
+	Group   string
+	Role    string
+	Port    int
+	Process string
 }
 
 func scanRepoWorktrees(cfg *config.Config) (map[string][]worktree.Worktree, error) {
@@ -246,7 +256,15 @@ func printWorktreePortMap(repoWorktrees map[string][]worktree.Worktree, runningP
 			if len(ports) > 0 {
 				var parts []string
 				for _, port := range ports {
-					parts = append(parts, fmt.Sprintf("%s:%d (%s)", port.Role, port.Port, port.Group))
+					label := port.Group
+					if label == "" {
+						label = port.Process
+					}
+					if label == "" {
+						parts = append(parts, fmt.Sprintf("%s:%d", port.Role, port.Port))
+					} else {
+						parts = append(parts, fmt.Sprintf("%s:%d (%s)", port.Role, port.Port, label))
+					}
 				}
 				portInfo = strings.Join(parts, ", ")
 			}
@@ -255,5 +273,194 @@ func printWorktreePortMap(repoWorktrees map[string][]worktree.Worktree, runningP
 		}
 
 		fmt.Println()
+	}
+}
+
+type listeningPort struct {
+	PID     int
+	Port    int
+	Command string
+	Cwd     string
+}
+
+func scanListeningPorts(repoWorktrees map[string][]worktree.Worktree) (map[string][]servicePort, error) {
+	worktreePaths := collectWorktreePaths(repoWorktrees)
+	if len(worktreePaths) == 0 {
+		return map[string][]servicePort{}, nil
+	}
+
+	ports, err := collectListeningPorts()
+	if err != nil {
+		return nil, err
+	}
+
+	portsByWorktree := make(map[string][]servicePort)
+	for _, port := range ports {
+		if port.Cwd == "" {
+			continue
+		}
+		worktreePath := matchWorktree(worktreePaths, port.Cwd)
+		if worktreePath == "" {
+			continue
+		}
+
+		portsByWorktree[worktreePath] = appendUniquePort(portsByWorktree[worktreePath], servicePort{
+			Role:    "listen",
+			Port:    port.Port,
+			Process: port.Command,
+		})
+	}
+
+	return portsByWorktree, nil
+}
+
+func collectWorktreePaths(repoWorktrees map[string][]worktree.Worktree) []string {
+	paths := []string{}
+	for _, worktrees := range repoWorktrees {
+		for _, wt := range worktrees {
+			paths = append(paths, wt.Path)
+		}
+	}
+	return paths
+}
+
+func collectListeningPorts() ([]listeningPort, error) {
+	cmd := exec.Command("lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcn")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("lsof failed: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var currentPID int
+	var currentCommand string
+	seen := make(map[string]bool)
+	ports := []listeningPort{}
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		switch line[0] {
+		case 'p':
+			pid, err := strconv.Atoi(strings.TrimPrefix(line, "p"))
+			if err != nil {
+				currentPID = 0
+				currentCommand = ""
+				continue
+			}
+			currentPID = pid
+		case 'c':
+			currentCommand = strings.TrimPrefix(line, "c")
+		case 'n':
+			if currentPID == 0 {
+				continue
+			}
+			port := parsePort(strings.TrimPrefix(line, "n"))
+			if port == 0 {
+				continue
+			}
+			key := fmt.Sprintf("%d:%d", currentPID, port)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			ports = append(ports, listeningPort{
+				PID:     currentPID,
+				Port:    port,
+				Command: currentCommand,
+			})
+		}
+	}
+
+	if len(ports) == 0 {
+		return ports, nil
+	}
+
+	cwdByPID := make(map[int]string)
+	for _, port := range ports {
+		if _, ok := cwdByPID[port.PID]; ok {
+			continue
+		}
+		cwd, err := lookupProcessCwd(port.PID)
+		if err != nil {
+			continue
+		}
+		cwdByPID[port.PID] = cwd
+	}
+
+	for i := range ports {
+		ports[i].Cwd = cwdByPID[ports[i].PID]
+	}
+
+	return ports, nil
+}
+
+func lookupProcessCwd(pid int) (string, error) {
+	cmd := exec.Command("lsof", "-a", "-p", fmt.Sprintf("%d", pid), "-d", "cwd", "-Fn")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if strings.HasPrefix(line, "n") {
+			return strings.TrimPrefix(line, "n"), nil
+		}
+	}
+	return "", nil
+}
+
+func parsePort(name string) int {
+	name = strings.Split(name, "->")[0]
+	lastColon := strings.LastIndex(name, ":")
+	if lastColon == -1 || lastColon == len(name)-1 {
+		return 0
+	}
+	portStr := name[lastColon+1:]
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0
+	}
+	return port
+}
+
+func matchWorktree(paths []string, cwd string) string {
+	cwd = filepath.Clean(cwd)
+	best := ""
+	for _, path := range paths {
+		if isSubpath(path, cwd) {
+			if len(path) > len(best) {
+				best = path
+			}
+		}
+	}
+	return best
+}
+
+func isSubpath(base, target string) bool {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
+}
+
+func appendUniquePort(ports []servicePort, port servicePort) []servicePort {
+	for _, existing := range ports {
+		if existing.Port == port.Port {
+			return ports
+		}
+	}
+	return append(ports, port)
+}
+
+func mergePorts(destination, source map[string][]servicePort) {
+	for path, ports := range source {
+		for _, port := range ports {
+			destination[path] = appendUniquePort(destination[path], port)
+		}
 	}
 }
